@@ -7,17 +7,18 @@ import re
 
 def main(argv):
     # Define Options: h (for help), p (for path)
-    short_opts = "hp:r:s:t:b:f:"
+    short_opts = "hp:r:s:t:b:f:n:"
     long_opts = ["help", "palette=", "rule=",
-                 "sheet=", "tile", "begin", "filename"]
+                 "sheet=", "tile", "begin", "filename", "newSheet"]
 
     palette = ""
     rule = ""
     sheet = ""
+    newSheet = ""
     tile = ""
     filename = ""
     begin = 0
-    usage_statement = 'Usage: duplicateRuleTile.py -h -p <path_to_palette_folder> -r <path_to_rule_tile_folder> -s <name_of_sprite_sheet> -t <name_of_rule_tile_asset> -b <int_of_new_rule_tile_beginning_sprite> -f [new_filename]'
+    usage_statement = 'Usage: duplicateRuleTile.py -h -p <path_to_palette_folder> -r <path_to_rule_tile_folder> -s <name_of_sprite_sheet> -t <name_of_rule_tile_asset> -b <int_of_new_rule_tile_beginning_sprite> -n [name_of_new_sprite_sheet] -f [new_filename]'
 
     try:
         # Parse the arguments using getopt
@@ -42,16 +43,37 @@ def main(argv):
             tile = arg
         elif opt in ("-b", "--begin"):
             begin = int(arg)
+        elif opt in ("-f", "--filename"):
+            filename = arg
+        elif opt in ("-n", "--new_sheet"):
+            newSheet = arg
 
     # required args
-    if not palette or not sheet or not rule or not begin or not tile:
-        print("missing args.")
+    missing_args = []
+
+    if not palette:
+        missing_args.append("palette")
+    if not sheet:
+        missing_args.append("sheet")
+    if not rule:
+        missing_args.append("rule")
+    if begin is None:
+        missing_args.append("begin")
+    if not tile:
+        missing_args.append("tile")
+
+    if missing_args:
+        print(f"Missing args: {', '.join(missing_args)}.")
         sys.exit(2)
 
     sprites = getSpriteSheetSprites(palette, sheet)
+
     ruleTile = getRuleTile(rule, tile)
 
     tileRuleSprites = getRuleTileSpriteOrder(sprites, ruleTile)
+
+    if (newSheet != ""):
+        sprites = getSpriteSheetSprites(palette, newSheet)
 
     copySpriteRule(rule, sprites, tileRuleSprites, begin, tile, filename)
 
@@ -75,6 +97,8 @@ def copySpriteRule(rule, sprites, tileRuleSprites, begin, tile, filename):
 
     with open(tile, 'r') as file:
         content = file.read()
+
+        content = content.replace(tileRuleSprites[0].guid, sprites[0].guid)
 
         # Find where the sprite's file id is listed
         search_string = "m_Name: "
@@ -101,26 +125,39 @@ def copySpriteRule(rule, sprites, tileRuleSprites, begin, tile, filename):
 
             if filename != "":
                 content = content.replace(name, filename)
+                if os.path.exists(filename + ".asset"):
+                    print(f"Error: The file '{
+                          filename}.asset' already exists.")
+                    sys.exit()
+
                 f = open(filename + ".asset", "x")
                 f.write(content)
                 sys.exit()
             else:
                 if has_numbers(name):
-                    number = re.search(r'\d+', name).group()
-                    newNumber = int(re.search(r'\d+', name).group()) + 1
-                    newName = name.replace(number, str(newNumber))
+                    newName = getNewFileName(name)
 
                     content = content.replace(name, newName)
                     f = open(newName + ".asset", "x")
                     f.write(content)
                     sys.exit()
                 else:
-                    newName = name + "_1"
+                    newName = getNewFileName(name + "_1")
                     content = content.replace(name, newName)
 
                     f = open(newName + ".asset", "x")
                     f.write(content)
                     sys.exit()
+
+
+def getNewFileName(filename):
+    number = re.search(r'\d+', filename).group()
+    newNumber = int(re.search(r'\d+', filename).group()) + 1
+    newName = filename.replace(number, str(newNumber))
+    if os.path.exists(newName + ".asset"):
+        return (getNewFileName(newName))
+    else:
+        return newName
 
 
 def getRuleTileSpriteOrder(sprites, ruleTile):
@@ -168,10 +205,13 @@ def getRuleTile(rule, tile):
 
             for rule in tiling_rules:
                 m_Id = rule.get("m_Id")
-                fileID = rule.get('m_Sprites', [{}])[0].get('fileID')
+                sprite_data = rule.get('m_Sprites', [{}])[0]
+
+                fileID = sprite_data.get('fileID')
+                guid = sprite_data.get('guid')
 
                 if m_Id is not None and fileID is not None:
-                    tile_rule = TileRule(m_Id, fileID)
+                    tile_rule = TileRule(m_Id, fileID, guid)
                     tile_rules_list.append(tile_rule)
 
     except FileNotFoundError:
@@ -227,16 +267,31 @@ def getSpriteSheetSprites(palette, sheet):
                 else:
                     fileID = after_string
 
-                sprite = Sprite(file.name, fileID)
-                sprites.append(sprite)
+                search_guid = "m_Sprite: {fileID: " + fileID + ", guid: "
+                index = content.find(search_guid)
+
+                if index != -1:
+                    start_index = index + len(search_guid)
+                    after_string = content[start_index:]
+
+                    stop_index = after_string.find(stop_char)
+
+                    if stop_index != -1:
+                        guid = after_string[:stop_index]
+                    else:
+                        guid = after_string
+
+                    sprite = Sprite(file.name, fileID, guid)
+                    sprites.append(sprite)
 
     return sprites
 
 
 class Sprite:
-    def __init__(self, name, fileID):
+    def __init__(self, name, fileID, guid):
         self.name = name
         self.fileID = fileID
+        self.guid = guid
         self.ID = int(re.search(r'\d+', name).group())
 
     def display_info(self):
@@ -244,9 +299,10 @@ class Sprite:
 
 
 class TileRule:
-    def __init__(self, tileID, fileID):
+    def __init__(self, tileID, fileID, guid):
         self.tileID = tileID
         self.fileID = fileID
+        self.guid = guid
 
 
 if __name__ == "__main__":
