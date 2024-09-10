@@ -203,6 +203,11 @@ def getRuleTile(rule, tile):
             tiling_rules = content.get(
                 'MonoBehaviour', {}).get('m_TilingRules', [])
 
+            if (len(tiling_rules) == 0):
+                print("Error reading tiling rules from " +
+                      tile + ", did you forget to save?")
+                sys.exit(1)
+
             for rule in tiling_rules:
                 m_Id = rule.get("m_Id")
                 sprite_data = rule.get('m_Sprites', [{}])[0]
@@ -238,6 +243,10 @@ def getSpriteSheetSprites(palette, sheet):
     # get list of files
     files = [f for f in os.listdir('.') if f.startswith(
         sheet) and f.endswith(".asset")]
+
+    if len(files) == 0:
+        print("Could not find sprite: " + sheet)
+        sys.exit(1)
 
     # initialize list of Sprites
     sprites = []
@@ -283,6 +292,10 @@ def getSpriteSheetSprites(palette, sheet):
 
                     sprite = Sprite(file.name, fileID, guid)
                     sprites.append(sprite)
+
+    if len(sprites) == 0:
+        print("Error reading sprites")
+        sys.exit(1)
 
     return sprites
 
